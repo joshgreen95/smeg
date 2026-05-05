@@ -1,0 +1,196 @@
+#!/bin/bash
+# smeg - Setup Mobile Exploitation Groundwork
+# Usage: ./smeg -c <cert.der|cert.pem> [-a <target.apk>] [-e] [-n]
+
+set -e
+
+# ─── Android SDK ──────────────────────────────────────────────────────────────
+
+export ANDROID_SDK_ROOT="$HOME/Android/Sdk"
+export ANDROID_HOME="$HOME/Android/Sdk"
+export PATH="$ANDROID_SDK_ROOT/emulator:$ANDROID_SDK_ROOT/platform-tools:$PATH"
+
+AVD_NAME="Pixel_9"
+AVD_PACKAGE="system-images;android-37.0;google_apis_ps16k;x86_64"
+AVD_DEVICE="pixel_9"
+
+CERT_FILE=""
+APK_FILE=""
+START_EMU=0
+CREATE_AVD=0
+
+usage() {
+    echo "Usage: $0 -c <cert.der|cert.pem> [-a <target.apk>] [-e] [-n]"
+    echo "  -c  Certificate file (DER or PEM) [required]"
+    echo "  -a  APK file to install"
+    echo "  -e  Launch emulator (AVD: $AVD_NAME)"
+    echo "  -n  Create AVD then launch emulator (implies -e)"
+    exit 1
+}
+
+while getopts "c:a:en" opt; do
+    case $opt in
+        c) CERT_FILE="$OPTARG" ;;
+        a) APK_FILE="$OPTARG" ;;
+        e) START_EMU=1 ;;
+        n) CREATE_AVD=1; START_EMU=1 ;;
+        *) usage ;;
+    esac
+done
+
+if [ -z "$CERT_FILE" ]; then
+    echo "[!] Cert file is required (-c)"
+    usage
+fi
+
+if [ ! -f "$CERT_FILE" ]; then
+    echo "[!] Cert file not found: $CERT_FILE"
+    exit 1
+fi
+
+if [ -n "$APK_FILE" ] && [ ! -f "$APK_FILE" ]; then
+    echo "[!] APK file not found: $APK_FILE"
+    exit 1
+fi
+
+showBanner() {
+    clear
+    echo -e "\033[38;5;220m"
+    echo "   ███████╗███╗   ███╗███████╗ ██████╗ "
+    echo "   ██╔════╝████╗ ████║██╔════╝██╔════╝ "
+    echo "   ███████╗██╔████╔██║█████╗  ██║  ███╗"
+    echo "   ╚════██║██║╚██╔╝██║██╔══╝  ██║   ██║"
+    echo "   ███████║██║ ╚═╝ ██║███████╗╚██████╔╝"
+    echo "   ╚══════╝╚═╝     ╚═╝╚══════╝ ╚═════╝ "
+    echo -e "\033[0m========================================================="
+    echo -e "\033[38;5;31m   Setup Mobile Exploitation Groundwork\033[0m"
+    echo -e "\033[0m========================================================="
+    echo -e "\033[38;5;31m--|Created by \033[1;38;5;32m[JoshGreenTech]|--\033[0m"
+    echo -e "\033[38;5;31m--|https://github.com/joshgreen95|--\033[0m"
+    echo -e "\033[0m========================================================="
+    echo ""
+}
+
+showBanner
+
+# ─── AVD / Emulator ───────────────────────────────────────────────────────────
+
+if [ "$CREATE_AVD" -eq 1 ]; then
+    echo "[*] Creating AVD: $AVD_NAME"
+    echo "no" | avdmanager create avd \
+        -n "$AVD_NAME" \
+        -k "$AVD_PACKAGE" \
+        -d "$AVD_DEVICE" \
+        --force
+    echo "[+] AVD created: $AVD_NAME"
+    echo ""
+fi
+
+if [ "$START_EMU" -eq 1 ]; then
+    echo "[*] Starting emulator: $AVD_NAME"
+    emulator -avd "$AVD_NAME" -writable-system -no-snapshot -no-boot-anim &
+    EMU_PID=$!
+    echo "[+] Emulator launched (PID: $EMU_PID)"
+    echo ""
+fi
+
+# ─── ADB ──────────────────────────────────────────────────────────────────────
+
+echo "[*] Waiting for device..."
+adb wait-for-device
+
+echo "[*] Verifying ADB connection..."
+adb devices
+
+echo "[*] Rooting device..."
+adb root
+sleep 2
+
+echo "[*] Remounting system partition..."
+adb remount
+sleep 1
+
+# ─── Certificate Installation ─────────────────────────────────────────────────
+
+echo ""
+echo "[*] Processing certificate: $CERT_FILE"
+
+PEM_FILE=$(mktemp /tmp/cacert.XXXXXX.pem)
+
+if openssl x509 -inform DER -in "$CERT_FILE" -out "$PEM_FILE" 2>/dev/null; then
+    echo "[+] Converted DER -> PEM"
+elif openssl x509 -inform PEM -in "$CERT_FILE" -out "$PEM_FILE" 2>/dev/null; then
+    echo "[+] Cert is already PEM format"
+else
+    echo "[!] Could not parse cert file — is it a valid DER or PEM certificate?"
+    rm -f "$PEM_FILE"
+    exit 1
+fi
+
+HASH=$(openssl x509 -inform PEM -subject_hash_old -in "$PEM_FILE" | head -1)
+HASH_FILE="/tmp/${HASH}.0"
+cp "$PEM_FILE" "$HASH_FILE"
+rm -f "$PEM_FILE"
+
+echo "[*] Pushing cert to system trust store as ${HASH}.0..."
+adb push "$HASH_FILE" /system/etc/security/cacerts/
+adb shell chmod 644 "/system/etc/security/cacerts/${HASH}.0"
+rm -f "$HASH_FILE"
+echo "[+] Certificate installed"
+
+# ─── Frida Installation ───────────────────────────────────────────────────────
+
+echo ""
+echo "[*] Detecting device architecture..."
+ABI=$(adb shell getprop ro.product.cpu.abi | tr -d '\r')
+echo "[+] Architecture: $ABI"
+
+case "$ABI" in
+    x86_64)      FRIDA_ARCH="x86_64" ;;
+    x86)         FRIDA_ARCH="x86" ;;
+    arm64-v8a)   FRIDA_ARCH="arm64" ;;
+    armeabi-v7a) FRIDA_ARCH="arm" ;;
+    *)
+        echo "[!] Unknown architecture: $ABI"
+        exit 1
+        ;;
+esac
+
+echo "[*] Fetching latest Frida version..."
+FRIDA_VERSION=$(curl -s https://api.github.com/repos/frida/frida/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
+echo "[+] Latest Frida: $FRIDA_VERSION"
+
+FRIDA_FILE="frida-server-${FRIDA_VERSION}-android-${FRIDA_ARCH}"
+FRIDA_URL="https://github.com/frida/frida/releases/download/${FRIDA_VERSION}/${FRIDA_FILE}.xz"
+
+echo "[*] Downloading frida-server..."
+curl -L "$FRIDA_URL" -o "/tmp/${FRIDA_FILE}.xz"
+xz -d "/tmp/${FRIDA_FILE}.xz"
+
+echo "[*] Pushing frida-server to device..."
+adb push "/tmp/${FRIDA_FILE}" /data/local/tmp/frida-server
+adb shell chmod 755 /data/local/tmp/frida-server
+rm -f "/tmp/${FRIDA_FILE}"
+echo "[+] Frida server installed"
+
+# ─── APK Installation ─────────────────────────────────────────────────────────
+
+if [ -n "$APK_FILE" ]; then
+    echo ""
+    echo "[*] Installing APK: $APK_FILE"
+    adb install "$APK_FILE"
+    echo "[+] APK installed"
+fi
+
+# ─── Reboot ───────────────────────────────────────────────────────────────────
+
+echo ""
+echo "[*] Rebooting device to apply certificate..."
+adb reboot
+
+echo ""
+echo -e "\033[38;5;220m[+] SMEG complete.\033[0m"
+echo "    Cert:  Settings -> Security -> Trusted Credentials -> System"
+echo "    Frida: adb root && adb shell /data/local/tmp/frida-server &"
+echo "    Check: frida-ps -U"
+echo ""
