@@ -1,5 +1,5 @@
 #!/bin/bash
-# smeg - Setup Mobile Exploitation Groundwork
+# smeg - Setup Mobile Engagement Groundwork
 # Usage: ./smeg -c <cert.der|cert.pem> [-a <target.apk>] [-e] [-n]
 
 set -e
@@ -63,7 +63,7 @@ showBanner() {
     echo "   ███████║██║ ╚═╝ ██║███████╗╚██████╔╝"
     echo "   ╚══════╝╚═╝     ╚═╝╚══════╝ ╚═════╝ "
     echo -e "\033[0m========================================================="
-    echo -e "\033[38;5;31m   Setup Mobile Exploitation Groundwork\033[0m"
+    echo -e "\033[38;5;31m   Setup Mobile Engagement Groundwork\033[0m"
     echo -e "\033[0m========================================================="
     echo -e "\033[38;5;31m--|Created by \033[1;38;5;32m[JoshGreenTech]|--\033[0m"
     echo -e "\033[38;5;31m--|https://github.com/joshgreen95|--\033[0m"
@@ -77,11 +77,57 @@ showBanner
 
 if [ "$CREATE_AVD" -eq 1 ]; then
     echo "[*] Creating AVD: $AVD_NAME"
-    echo "no" | avdmanager create avd \
-        -n "$AVD_NAME" \
-        -k "$AVD_PACKAGE" \
-        -d "$AVD_DEVICE" \
-        --force
+
+    AVD_DIR="$HOME/.android/avd/${AVD_NAME}.avd"
+    AVD_INI="$HOME/.android/avd/${AVD_NAME}.ini"
+    AVD_SYSDIR=$(echo "$AVD_PACKAGE" | tr ';' '/')
+
+    mkdir -p "$AVD_DIR"
+
+    cat > "$AVD_INI" <<EOF
+avd.ini.encoding=UTF-8
+path=$AVD_DIR
+path.rel=avd/${AVD_NAME}.avd
+target=android-37
+EOF
+
+    cat > "$AVD_DIR/config.ini" <<EOF
+AvdId=$AVD_NAME
+PlayStore.enabled=false
+abi.type=x86_64
+avd.ini.encoding=UTF-8
+hw.accelerometer=yes
+hw.audioInput=yes
+hw.battery=yes
+hw.camera.back=virtualscene
+hw.camera.front=emulated
+hw.cpu.arch=x86_64
+hw.dPad=no
+hw.device.manufacturer=Google
+hw.device.name=$AVD_DEVICE
+hw.gps=yes
+hw.gpu.enabled=yes
+hw.gpu.mode=auto
+hw.keyboard=yes
+hw.lcd.density=420
+hw.lcd.height=2424
+hw.lcd.width=1080
+hw.mainKeys=no
+hw.ramSize=2048
+hw.sdCard=no
+hw.sensors.orientation=yes
+hw.sensors.proximity=yes
+hw.trackBall=no
+image.sysdir.1=$AVD_SYSDIR/
+showDeviceFrame=yes
+skin.dynamic=yes
+skin.name=$AVD_DEVICE
+skin.path=$ANDROID_SDK_ROOT/skins/$AVD_DEVICE
+tag.display=Google APIs
+tag.id=google_apis
+vm.heapSize=256
+EOF
+
     echo "[+] AVD created: $AVD_NAME"
     echo ""
 fi
@@ -106,9 +152,21 @@ echo "[*] Rooting device..."
 adb root
 sleep 2
 
-echo "[*] Remounting system partition..."
-adb remount
-sleep 1
+echo "[*] Disabling verity and remounting..."
+REMOUNT_OUT=$(adb remount 2>&1)
+echo "$REMOUNT_OUT"
+
+if echo "$REMOUNT_OUT" | grep -q "reboot"; then
+    echo "[*] Reboot required to apply verity changes, rebooting..."
+    adb reboot
+    echo "[*] Waiting for device after reboot..."
+    adb wait-for-device
+    sleep 5
+    adb root
+    sleep 2
+    adb remount
+    sleep 1
+fi
 
 # ─── Certificate Installation ─────────────────────────────────────────────────
 
