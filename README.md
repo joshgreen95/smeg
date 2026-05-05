@@ -11,26 +11,14 @@ A bash script to automate the setup of an Android mobile pentest environment.
 5. Optionally installs a target APK
 
 ---
-
 ## Requirements
 
 - Android SDK (emulator, platform-tools, cmdline-tools)
 - `adb`
-- `openssl`
-- `curl` + `xz`
-- `avdmanager` (only needed for `-n`)
+- `avdmanager` 
 - Frida (`pip install frida-tools`)
 
 The script expects the Android SDK at `~/Android/Sdk`. If yours is elsewhere, update the `ANDROID_SDK_ROOT` line at the top of the script.
-
-### Install Android SDK (if needed)
-
-Download Android Studio or the standalone command-line tools from the Android developer site, then install the required system image:
-
-```bash
-sdkmanager "platform-tools" "emulator"
-sdkmanager "system-images;android-37.0;google_apis_ps16k;x86_64"
-```
 
 ---
 
