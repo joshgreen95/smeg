@@ -1,17 +1,14 @@
 # smeg — Setup Mobile Explotation Groundwork
 
-A bash script to automate the setup of an Android mobile pentest environment. Given a proxy certificate, smeg handles emulator creation, certificate installation into the system trust store, and Frida server deployment — all in one command.
-
----
+A bash script to automate the setup of an Android mobile pentest environment.
 
 ## What it does
 
 1. Optionally creates and/or launches an Android emulator (AVD)
-2. Waits for ADB to connect and roots the device
+2. Roots the device
 3. Installs a proxy certificate (Burp, mitmproxy, etc.) directly into the system trust store
 4. Auto-detects device architecture and downloads + installs the latest Frida server
 5. Optionally installs a target APK
-6. Reboots the device to apply changes
 
 ---
 
@@ -34,18 +31,6 @@ Download Android Studio or the standalone command-line tools from the Android de
 sdkmanager "platform-tools" "emulator"
 sdkmanager "system-images;android-37.0;google_apis_ps16k;x86_64"
 ```
-
----
-
-## Setup
-
-```bash
-git clone https://github.com/joshgreen95/smeg
-cd smeg
-chmod +x smeg
-```
-
-No dependencies to install beyond the Android SDK and standard tools listed above.
 
 ---
 
@@ -86,31 +71,4 @@ No dependencies to install beyond the Android SDK and standard tools listed abov
 
 ## Configuration
 
-The AVD settings are defined at the top of the script:
-
-```bash
-AVD_NAME="Pixel_9"
-AVD_PACKAGE="system-images;android-37.0;google_apis_ps16k;x86_64"
-AVD_DEVICE="pentest_avd"
-```
-
-Change these to match your preferred system image or device profile before running.
-
----
-
-## After setup
-
-Once smeg completes and the device reboots:
-
-- **Verify cert:** Settings -> Security -> Trusted Credentials -> System
-- **Start Frida:** `adb root && adb shell /data/local/tmp/frida-server &`
-- **Check processes:** `frida-ps -U`
-
----
-
-## Notes
-
-- Designed for use with Android emulators launched with `-writable-system`. Physical devices must already be rooted.
-- The script uses `adb remount` to make the system partition writable, which requires a rooted/writable-system emulator.
-- Frida server is fetched fresh from the latest GitHub release on each run to avoid version mismatches with your local `frida-tools`.
-
+The AVD settings are defined at the top of the script
