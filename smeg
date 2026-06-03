@@ -236,6 +236,7 @@ echo "[+] Frida server installed"
 if [ -n "$APK_FILE" ]; then
     echo ""
     echo "[*] Installing APK: $APK_FILE"
+    sleep 40
     adb install "$APK_FILE"
     echo "[+] APK installed"
 fi
